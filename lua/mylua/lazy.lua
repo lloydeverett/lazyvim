@@ -1,0 +1,639 @@
+
+-- lazy.nvim bootstrap
+local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
+if not (vim.uv or vim.loop)["fs_stat"](lazypath) then
+    local lazyrepo = "https://github.com/folke/lazy.nvim.git"
+    local out = vim.fn.system({ "git", "clone", "--filter=blob:none", "--branch=stable", lazyrepo, lazypath })
+    if vim.v.shell_error ~= 0 then
+        vim.api.nvim_echo({
+            { "Failed to clone lazy.nvim:\n", "ErrorMsg" },
+            { out, "WarningMsg" },
+            { "\nPress any key to exit..." },
+        }, true, {})
+        vim.fn.getchar()
+        os.exit(1)
+    end
+end
+vim.opt.rtp:prepend(lazypath)
+
+local function postprocess_spec(spec)
+    local result = {}
+    for _, v in ipairs(spec) do
+        if not vim.env.NVIM_MINIMAL or v.include_in_minimal then
+            table.insert(result, v)
+        end
+        if v.include_in_minimal ~= nil then
+            v.include_in_minimal = nil
+        end
+    end
+    return result
+end
+
+local is_tty = os.getenv("TERM") == "linux"
+if not is_tty then
+    vim.cmd("set termguicolors")
+    -- hide default color schemes
+    local default_colorschemes = {
+        "blue.vim",
+        "darkblue.vim",
+        "delek.vim",
+        "desert.vim",
+        "elflord.vim",
+        "evening.vim",
+        "habamax.vim",
+        "industry.vim",
+        "koehler.vim",
+        "lunaperche.vim",
+        "morning.vim",
+        "murphy.vim",
+        "pablo.vim",
+        "peachpuff.vim",
+        "quiet.vim",
+        "retrobox.vim",
+        "ron.vim",
+        "shine.vim",
+        "slate.vim",
+        "sorbet.vim",
+        "torte.vim",
+        "wildcharm.vim",
+        "zaibatsu.vim",
+        "zellner.vim",
+    }
+    local wildignore = ""
+    for _, v in ipairs(default_colorschemes) do
+        if wildignore ~= "" then
+            wildignore = wildignore .. ","
+        end
+        wildignore = wildignore .. v
+    end
+    vim.o.wildignore = wildignore
+else
+    vim.cmd("colorscheme retrobox")
+end
+
+require("lazy").setup({
+  spec = postprocess_spec({
+      -- color schemes --------------------------------------------------------------------------------------------
+      { 'sainnhe/gruvbox-material',
+           config = function(_, _)
+               vim.g.gruvbox_material_background = 'medium'
+           end,
+           enabled = not is_tty
+      },
+      { 'sainnhe/everforest',
+           config = function(_, _)
+               vim.g.everforest_background = 'hard'
+           end,
+           enabled = not is_tty
+      },
+      { 'jpwol/thorn.nvim',
+           enabled = not is_tty
+      },
+      { 'everviolet/nvim', name="evergarden",
+           opts = {
+               theme = {
+                   variant = "fall",
+                   accent = "green"
+               },
+               editor = {
+                   transparent_background = not vim.g.neovide
+               }
+           },
+           config = function(_, opts)
+               require("evergarden").setup(opts)
+           end,
+           enabled = not is_tty
+      },
+      { "wooosh/bw.vim",
+           enabled = not is_tty
+      },
+
+      -- plugins --------------------------------------------------------------------------------------------------
+      { 'nvim-mini/mini.nvim',
+           opts = {},
+           config = function(_, _)
+               local MiniTrailspace = require('mini.trailspace')
+               MiniTrailspace.setup({ })
+
+               local MiniStatusline = require("mini.statusline")
+               MiniStatusline.setup({ })
+               local default_section_fileinfo = MiniStatusline.section_fileinfo
+               local function rfind(str, pattern)
+                   local i = str:len()
+                   while i > 0 do
+                       if str:sub(i, i) == pattern then
+                           return i
+                       end
+                       i = i - 1
+                   end
+                   return nil
+               end
+               MiniStatusline.section_fileinfo = function(args)
+                   -- remove file size from fileinfo result
+                   local default_result = default_section_fileinfo(args)
+                   local index = rfind(default_result, " ")
+                   local result
+
+                   if index ~= nil then
+                       result = default_result:sub(1, index - 1)
+                   else
+                       result = default_result
+                   end
+
+                   return result
+               end
+               MiniStatusline.section_diff = function()
+                   return ""
+               end
+               local conflicts_timer_callback = function()
+                   local job = vim.fn.jobstart(
+                       { "/bin/bash", "-c", "find $HOME/sync/wiki | grep sync-conflict-" },
+                       {
+                           on_stdout = function(job_id, data, event)
+                               -- ignore
+                           end,
+                           on_exit = function(job_id, code, event)
+                               vim.g.sync_conflicts_found = code == 0
+                           end
+                       }
+                   )
+               end
+               conflicts_timer_callback()
+               MiniStatusline.section_location = function(_)
+                   local result = '%l|%v'
+                   local prepend_str = ""
+
+                   -- prepend timer icon when using virtualtimer
+                   local buf = vim.api.nvim_get_current_buf()
+                   if _G.virtualtimer ~= nil and _G.virtualtimer.timer_id_for_buf[buf] ~= nil then
+                       prepend_str = prepend_str .. "[]"
+                   end
+
+                   -- prepend sync conflicts marker if global is set
+                   if vim.g.sync_conflicts_found then
+                       prepend_str = prepend_str .. "[󰈽]"
+                   end
+
+                   if prepend_str ~= "" then
+                       result = prepend_str .. " " .. result
+                   end
+
+                   return result
+               end
+               local conflicts_timer = vim.fn.timer_start(
+                   5 * 60 * 1000,
+                   conflicts_timer_callback,
+                   { ["repeat"] = -1 } -- -1 means infinite repeat
+               )
+               local default_section_git = MiniStatusline.section_git
+               MiniStatusline.section_git = function(args)
+                   local result = default_section_git(args)
+                   result = result:gsub("%( ", "(")
+                   result = result:gsub(" %)", ")")
+                   return result
+               end
+
+               local MiniTabline = require("mini.tabline")
+               MiniTabline.setup({ tabpage_section = 'right' })
+               local default_make_tabline_string = MiniTabline.make_tabline_string
+               MiniTabline.make_tabline_string = function()
+                   return os.date("  %H:%M") .. " " .. default_make_tabline_string()
+               end
+
+               local MiniHipatterns = require("mini.hipatterns")
+               MiniHipatterns.setup({
+                   highlighters = {
+                       -- Highlight hex color strings (`#rrggbb`) using that color
+                       hex_color = MiniHipatterns.gen_highlighter.hex_color(),
+                   },
+               })
+
+               local MiniFiles = require("mini.files")
+               MiniFiles.setup({
+                   mappings = {
+                       close       = '<ESC>',
+                       go_in       = 'l',
+                       go_in_plus  = 'L',
+                       go_out      = 'h',
+                       go_out_plus = 'H',
+                       mark_goto   = "'",
+                       mark_set    = 'm',
+                       reset       = '<BS>',
+                       reveal_cwd  = '@',
+                       show_help   = 'g?',
+                       synchronize = '=',
+                       trim_left   = '<',
+                       trim_right  = '>',
+                   },
+               })
+
+               local MiniPick = require('mini.pick')
+               MiniPick.setup({ })
+               vim.keymap.set("n", "<leader>b", function()
+                   MiniPick.builtin.buffers()
+               end)
+               vim.keymap.set("n", "<leader>f", function()
+                   MiniPick.builtin.files()
+               end)
+               vim.keymap.set("n", "<leader>/", function()
+                   MiniPick.builtin.grep_live()
+               end)
+               vim.keymap.set("n", "<leader>h", function()
+                   MiniPick.builtin.help()
+               end)
+               local function char_from_reference_line(str)
+                   local index = string.find(str, " ")
+                   if index == nil then
+                       error("could not split on space in reference line")
+                   end
+                   return string.sub(str, 1, index - 1)
+               end
+               local function pick_from_reference(path)
+                   local selection = MiniPick.builtin.cli(
+                       { command = { 'cat', path } },
+                       { source = { choose = function() end, name = "Symbols"} }
+                   )
+                   if selection == nil then
+                       return
+                   end
+                   vim.api.nvim_put({ char_from_reference_line(selection) }, "c", true, true)
+               end
+               local REFERENCE_DIR = os.getenv("HOME") .. '/dotfiles/reference/'
+               vim.keymap.set('n', '<leader>se', function()
+                   pick_from_reference(REFERENCE_DIR .. 'emojis.txt')
+               end)
+               vim.keymap.set('n', '<leader>sn', function()
+                   pick_from_reference(REFERENCE_DIR .. 'nerdfont.txt')
+               end)
+               vim.keymap.set('n', '<leader>ss', function()
+                   pick_from_reference(REFERENCE_DIR .. 'symbols.txt')
+               end)
+               vim.keymap.set('n', '<leader>sc', function()
+                   pick_from_reference(REFERENCE_DIR .. 'cool.txt')
+               end)
+
+               local MiniVisits = require('mini.visits')
+               MiniVisits.setup({ })
+               vim.keymap.set("n", "<leader>.", function()
+                   MiniVisits.select_path('')
+               end)
+
+               local MiniAlign = require('mini.align')
+               MiniAlign.setup({ })
+
+               local MiniSplitjoin = require('mini.splitjoin')
+               MiniSplitjoin.setup({ })
+
+               local MiniNotify = require('mini.notify')
+               MiniNotify.setup({ })
+
+               local MiniDiff = require('mini.diff')
+               MiniDiff.setup({
+                   view = {
+                       style = 'sign',
+                       signs = { add = '▒', change = '▒', delete = '▒' },
+                       priority = 100,
+                   },
+               })
+               vim.keymap.set("n", "``", function()
+                   MiniDiff.toggle_overlay()
+               end)
+
+               local MiniGit = require('mini.git')
+               MiniGit.setup({ })
+
+               local MiniClue = require('mini.clue')
+               MiniClue.setup({
+                   triggers = {
+                       -- Leader triggers
+                       { mode = 'n', keys = '<Leader>' },
+                       { mode = 'x', keys = '<Leader>' },
+                       -- Built-in completion
+                       { mode = 'i', keys = '<C-x>' },
+                       -- `g` key
+                       { mode = 'n', keys = 'g' },
+                       { mode = 'x', keys = 'g' },
+                       -- Marks
+                       { mode = 'n', keys = "'" },
+                       { mode = 'n', keys = '`' },
+                       { mode = 'x', keys = "'" },
+                       { mode = 'x', keys = '`' },
+                       -- Registers
+                       { mode = 'n', keys = '"' },
+                       { mode = 'x', keys = '"' },
+                       { mode = 'i', keys = '<C-r>' },
+                       { mode = 'c', keys = '<C-r>' },
+                       -- Window commands
+                       { mode = 'n', keys = '<C-w>' },
+                       -- `z` key
+                       { mode = 'n', keys = 'z' },
+                       { mode = 'x', keys = 'z' },
+                   },
+                   clues = {
+                       -- Enhance this by adding descriptions for <Leader> mapping groups
+                       MiniClue.gen_clues.builtin_completion(),
+                       MiniClue.gen_clues.g(),
+                       MiniClue.gen_clues.marks(),
+                       MiniClue.gen_clues.registers(),
+                       MiniClue.gen_clues.windows(),
+                       MiniClue.gen_clues.z(),
+                   },
+               })
+           end
+      },
+      { 'vimwiki/vimwiki',
+           branch = 'dev',
+           config = function(_, _)
+               vim.g.vimwiki_list = {{
+                   path = os.getenv('HOME') .. '/sync/wiki',
+                   syntax = 'markdown',
+                   ext = 'md'
+               }}
+           end
+      },
+      { 'chentoast/marks.nvim',
+           opts = {}
+      },
+      { 'nvim-lua/plenary.nvim' },
+      { 'nvim-lua/popup.nvim' },
+      { 'nvim-telescope/telescope.nvim',
+           opts = {
+               defaults = {
+                   path_display = { "truncate" },
+               },
+               extensions = { },
+           },
+           config = function(_, opts)
+               require("telescope").setup(opts)
+               vim.keymap.set("n", "<leader>:", "<cmd>Telescope<cr>")
+           end,
+           tag = '0.1.8'
+      },
+      { 'neovim/nvim-lspconfig' },
+      { 'mason-org/mason.nvim',
+           opts = {}
+      },
+      { 'mason-org/mason-lspconfig.nvim',
+           opts = {}
+      },
+      { 'hrsh7th/nvim-cmp',
+           dependencies = {
+               { 'hrsh7th/cmp-nvim-lsp' },
+               { 'hrsh7th/cmp-buffer' },
+               { 'hrsh7th/cmp-path' },
+               { 'hrsh7th/cmp-cmdline' },
+               { 'hrsh7th/cmp-nvim-lsp-signature-help' },
+           },
+           config = function(_, _)
+               -- Set up nvim-cmp.
+               local cmp = require('cmp')
+               cmp.setup({
+                   enabled = function()
+                       return true
+                   end,
+                   snippet = {
+                       expand = function(args)
+                           vim.snippet.expand(args.body)
+                       end,
+                   },
+                   window = { },
+                   mapping = cmp.mapping.preset.insert({
+                       ['<C-b>'] = cmp.mapping.scroll_docs(-4),
+                       ['<C-f>'] = cmp.mapping.scroll_docs(4),
+                       ['<C-Space>'] = cmp.mapping.complete(),
+                       ['<C-e>'] = cmp.mapping.abort(),
+                       -- Accept currently selected item. Set `select` to `false` to only confirm explicitly selected items.
+                       ['<Tab>'] = cmp.mapping.confirm({ select = true }),
+                   }),
+                   sources = cmp.config.sources({
+                       { name = 'nvim_lsp' },
+                   }, {
+                       { name = 'buffer' },
+                   }, {
+                       { name = 'nvim_lsp_signature_help' }
+                   })
+               })
+               -- Use buffer source for `/` and `?` (if you enabled `native_menu`, this won't work anymore).
+               cmp.setup.cmdline({ '/', '?' }, {
+                   mapping = cmp.mapping.preset.cmdline(),
+                   sources = {
+                       { name = 'buffer' }
+                   }
+               })
+               -- Use cmdline & path source for ':' (if you enabled `native_menu`, this won't work anymore).
+               cmp.setup.cmdline(':', {
+                   mapping = cmp.mapping.preset.cmdline(),
+                   sources = cmp.config.sources({
+                       { name = 'path' }
+                   }, {
+                       { name = 'cmdline' }
+                   }),
+                   matching = { disallow_symbol_nonprefix_matching = false }
+               })
+               local sql_config = {
+                   sources = {{ name = 'vim-dadbod-completion' }},
+               }
+               cmp.setup.filetype('sql', sql_config)
+               cmp.setup.filetype('mysql', sql_config)
+               cmp.setup.filetype('plsql', sql_config)
+               cmp.setup.filetype('vimwiki', {
+                   sources = {},
+               })
+           end
+      },
+      { 'tbabej/taskwiki',
+           enabled = function()
+               return os.getenv("RPI") ~= "1"
+           end
+      },
+      { 'declancm/cinnamon.nvim',
+           opts = {},
+           config = function(_, opts)
+               if not vim.g.neovide then
+                   local cinnamon = require('cinnamon')
+                   cinnamon.setup(opts)
+                   vim.keymap.set("n", "<C-U>", function() cinnamon.scroll("<C-U>") end)
+                   vim.keymap.set("n", "<C-D>", function() cinnamon.scroll("<C-D>") end)
+                   -- vim.keymap.set("n", "{", function() cinnamon.scroll("{", { mode = "window" }) end)
+                   -- vim.keymap.set("n", "}", function() cinnamon.scroll("}", { mode = "window" }) end)
+                   vim.keymap.set("n", "G", function() cinnamon.scroll("G", { mode = "window", max_delta = { time = 250 } }) end)
+                   vim.keymap.set("n", "gg", function() cinnamon.scroll("gg", { mode = "window", max_delta = { time = 250 } }) end)
+               end
+           end
+      },
+      { "folke/todo-comments.nvim",
+           dependencies = {
+               "nvim-lua/plenary.nvim"
+           },
+           opts = {
+               highlight = {
+                   comments_only = false
+               }
+           }
+      },
+      { "jake-stewart/multicursor.nvim",
+          branch = "1.0",
+          config = function(_, _)
+              local mc = require("multicursor-nvim")
+              mc.setup()
+              -- Add or skip cursor above/below the main cursor.
+              vim.keymap.set({"n", "x"}, "<up>", function() mc.lineAddCursor(-1) end)
+              vim.keymap.set({"n", "x"}, "<down>", function() mc.lineAddCursor(1) end)
+              vim.keymap.set({"n", "x"}, "<C-k>", function() mc.lineAddCursor(-1) end)
+              vim.keymap.set({"n", "x"}, "<C-j>", function() mc.lineAddCursor(1) end)
+              vim.keymap.set({"n", "x"}, "<leader><up>", function() mc.lineSkipCursor(-1) end)
+              vim.keymap.set({"n", "x"}, "<leader><down>", function() mc.lineSkipCursor(1) end)
+              -- Add or skip adding a new cursor by matching word/selection
+              vim.keymap.set({"n", "x"}, "<C-n>", function() mc.matchAddCursor(1) end)
+              vim.keymap.set({"n", "x"}, "<C-s>", function() mc.matchSkipCursor(1) end)
+              vim.keymap.set({"n", "x"}, "<C-S-N>", function() mc.matchAddCursor(-1) end)
+              vim.keymap.set({"n", "x"}, "<C-S-S>", function() mc.matchSkipCursor(-1) end)
+              -- Add and remove cursors with control + left click.
+              vim.keymap.set("n", "<c-leftmouse>", mc.handleMouse)
+              vim.keymap.set("n", "<c-leftdrag>", mc.handleMouseDrag)
+              vim.keymap.set("n", "<c-leftrelease>", mc.handleMouseRelease)
+              -- Disable and enable cursors.
+              vim.keymap.set({"n", "x"}, "<c-q>", mc.toggleCursor)
+              -- Mappings defined in a keymap layer only apply when there are
+              -- multiple cursors. This lets you have overlapping mappings.
+              mc.addKeymapLayer(function(layerSet)
+                  -- Select a different cursor as the main one.
+                  layerSet({"n", "x"}, "<left>", mc.prevCursor)
+                  layerSet({"n", "x"}, "<right>", mc.nextCursor)
+                  -- Delete the main cursor.
+                  layerSet({"n", "x"}, "<leader>x", mc.deleteCursor)
+                  -- Enable and clear cursors using escape.
+                  layerSet("n", "<esc>", function()
+                      if not mc.cursorsEnabled() then
+                          mc.enableCursors()
+                      else
+                          mc.clearCursors()
+                      end
+                  end)
+              end)
+              -- Customize how cursors look.
+              vim.api.nvim_set_hl(0, "MultiCursorCursor", { reverse = true })
+              vim.api.nvim_set_hl(0, "MultiCursorVisual", { link = "Visual" })
+              vim.api.nvim_set_hl(0, "MultiCursorSign", { link = "SignColumn"})
+              vim.api.nvim_set_hl(0, "MultiCursorMatchPreview", { link = "Search" })
+              vim.api.nvim_set_hl(0, "MultiCursorDisabledCursor", { reverse = true })
+              vim.api.nvim_set_hl(0, "MultiCursorDisabledVisual", { link = "Visual" })
+              vim.api.nvim_set_hl(0, "MultiCursorDisabledSign", { link = "SignColumn"})
+          end
+      },
+      { "chomosuke/term-edit.nvim",
+           opts = {
+               prompt_end = '%% ',
+           }
+      },
+      { 'folke/snacks.nvim',
+           opts = { }
+      },
+      { 'tzachar/local-highlight.nvim',
+           dependencies = {
+               "folke/snacks.nvim" -- for animation support
+           },
+           opts = {
+               -- file_types = {"python", "cpp"}, -- If this is given only attach to this
+               -- OR attach to every filetype except:
+               disable_file_types = { "markdown", "vimwiki" },
+               hlgroup = "LocalHighlight",
+               cw_hlgroup = nil,
+               -- Whether to display highlights in INSERT mode or not
+               insert_mode = false,
+               min_match_len = 1,
+               max_match_len = math.huge,
+               highlight_single_match = true,
+               animate = {
+                   enabled = true,
+                   easing = "linear",
+                   duration = {
+                       step = 10, -- ms per step
+                       total = 100, -- maximum duration
+                   },
+               },
+               debounce_timeout = 200,
+           }
+      },
+      { 'jbyuki/venn.nvim',
+           config = function(_, _)
+               _G["" .. "Toggle_venn"] = function ()
+                   local venn_enabled = vim.inspect(vim.b.venn_enabled)
+                   if venn_enabled == "nil" then
+                       vim.b.venn_enabled = true
+                       vim.cmd[[setlocal ve=all]]
+                       -- draw a line on HJKL keystokes
+                       vim.api.nvim_buf_set_keymap(0, "n", "J", "<C-v>j:VBox<CR>", { noremap = true })
+                       vim.api.nvim_buf_set_keymap(0, "n", "K", "<C-v>k:VBox<CR>", { noremap = true })
+                       vim.api.nvim_buf_set_keymap(0, "n", "L", "<C-v>l:VBox<CR>", { noremap = true })
+                       vim.api.nvim_buf_set_keymap(0, "n", "H", "<C-v>h:VBox<CR>", { noremap = true })
+                       -- draw a box by pressing "f" with visual selection
+                       vim.api.nvim_buf_set_keymap(0, "v", "f", ":VBox<CR>", { noremap = true })
+                   else
+                       vim.cmd[[setlocal ve=]]
+                       vim.api.nvim_buf_del_keymap(0, "n", "J")
+                       vim.api.nvim_buf_del_keymap(0, "n", "K")
+                       vim.api.nvim_buf_del_keymap(0, "n", "L")
+                       vim.api.nvim_buf_del_keymap(0, "n", "H")
+                       vim.api.nvim_buf_del_keymap(0, "v", "f")
+                       vim.b.venn_enabled = nil
+                   end
+               end
+               -- toggle keymappings for venn using <leader>v
+               vim.api.nvim_set_keymap('n', '<leader>v', ":lua Toggle_venn()<CR>", { noremap = true })
+           end
+      },
+      { 'vim-scripts/vis'
+      },
+      { 'kristijanhusak/vim-dadbod-ui',
+           dependencies = {
+             { 'tpope/vim-dadbod', lazy = true },
+             { 'kristijanhusak/vim-dadbod-completion', ft = { 'sql', 'mysql', 'plsql' }, lazy = true }, -- Optional
+           },
+           cmd = {
+             'DBUI',
+             'DBUIToggle',
+             'DBUIAddConnection',
+             'DBUIFindBuffer',
+           },
+           init = function()
+             -- Your DBUI configuration
+             vim.g.db_ui_use_nerd_fonts = 1
+           end,
+      },
+
+      -- virtualtimer ---------------------------------------------------------------------------------------------
+      { dir = "~/virtualtimer",
+           dependencies = { 'nvim-mini/mini.nvim' },
+           opts = {},
+           config = function(_, opts)
+               require("virtualtimer").setup(opts)
+               local modes = { 'n', 'x' }
+               for _, mode in ipairs(modes) do
+                   vim.api.nvim_set_keymap(mode, '<leader>pp', ':VtParse<CR>', { noremap = true })
+                   vim.api.nvim_set_keymap(mode, '<leader>ps', ':VtStart<CR>', { noremap = true })
+                   vim.api.nvim_set_keymap(mode, '<leader>pq', ':VtStop<CR>',  { noremap = true })
+                   vim.api.nvim_set_keymap(mode, '<leader>pc', ':VtClear<CR>', { noremap = true })
+               end
+           end
+      },
+
+      -- treectl --------------------------------------------------------------------------------------------------
+      { 'MunifTanjim/nui.nvim',
+           include_in_minimal = true
+      },
+      { dir = "~/treectl",
+           dependencies = { 'MunifTanjim/nui.nvim' },
+           include_in_minimal = true,
+           opts = {},
+           config = function(_, opts)
+               require("treectl").setup(opts)
+               vim.api.nvim_set_keymap('n', '<leader>[', '<Cmd>Treectl<CR>', { noremap = true, silent = true })
+               vim.api.nvim_set_keymap('n', '<leader>]', '<Cmd>TreectlNewBuf<CR>', { noremap = true, silent = true })
+           end
+      },
+  }),
+  install = { colorscheme = { "habamax" } },
+  checker = { enabled = false }
+})
+
