@@ -91,7 +91,7 @@ set foldlevelstart=99
 autocmd FileType markdown setlocal foldlevelstart=99
 
 " auto-close terminals when shell exits
-autocmd TermClose * execute 'bdelete!'
+" autocmd TermClose * execute 'bdelete!'
 
 " custom highlights
 " lua require('config.highlights')
@@ -178,4 +178,21 @@ autocmd TermClose * execute 'bdelete!'
 "     matching = { disallow_symbol_nonprefix_matching = false }
 " })
 " EOF
+
+" enable difftool
+" packadd nvim.difftool
+
+" diff highlights
+" highlight DiffAdd    cterm=NONE ctermfg=NONE ctermbg=22  gui=NONE guifg=NONE guibg=#003300
+" highlight DiffChange cterm=NONE ctermfg=NONE ctermbg=17  gui=NONE guifg=NONE guibg=#000033
+" highlight DiffDelete cterm=NONE ctermfg=NONE ctermbg=52  gui=NONE guifg=NONE guibg=#330000
+" highlight DiffText   cterm=NONE ctermfg=NONE ctermbg=24  gui=NONE guifg=NONE guibg=#004466
+" Muted, soft pastel diff backgrounds that preserve syntax colors
+highlight DiffAdd    cterm=NONE ctermfg=NONE ctermbg=236 gui=NONE guifg=NONE guibg=#263526
+highlight DiffChange cterm=NONE ctermfg=NONE ctermbg=236 gui=NONE guifg=NONE guibg=#223035
+highlight DiffDelete cterm=NONE ctermfg=210 ctermbg=236 gui=NONE guifg=#ff8787 guibg=#352626
+highlight DiffText   cterm=NONE ctermfg=NONE ctermbg=238 gui=NONE guifg=NONE guibg=#354550
+
+" jj
+nnoremap <Leader>j :JJ<CR>
 

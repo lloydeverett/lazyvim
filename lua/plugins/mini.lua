@@ -176,11 +176,11 @@ return {
       local MiniNotify = require("mini.notify")
       MiniNotify.setup({})
 
-      local MiniGit = require("mini.git")
-      MiniGit.setup({})
+      -- local MiniColors = require("mini.colors")
+      -- MiniColors.setup({})
 
-      local MiniColors = require("mini.colors")
-      MiniColors.setup({})
+      -- local MiniGit = require("mini.git")
+      -- MiniGit.setup({})
 
       -- local MiniDiff = require('mini.diff')
       -- MiniDiff.setup({

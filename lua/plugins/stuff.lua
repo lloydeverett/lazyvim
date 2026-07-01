@@ -127,4 +127,30 @@ return {
       debounce_timeout = 200,
     },
   },
+  {
+    "tpope/vim-fugitive",
+    cmd = { "Git", "G", "Gdiffsplit" }, -- Lazy-load on fugitive commands
+  },
+  {
+    "sindrets/diffview.nvim",
+    lazy = false,
+    config = {
+      default_args = {
+        DiffviewOpen = { "--imply-local" },
+        DiffviewFileHistory = { "--pin-local" },
+      },
+    },
+  },
+  {
+    "yannvanhalewyn/jujutsu.nvim",
+    lazy = false,
+    config = function()
+      require("jujutsu-nvim").setup({
+        diff_preset = "diffview",
+        keymap = {
+          m = { cmd = "describe", desc = "Edit description" },
+        },
+      })
+    end,
+  },
 }
